@@ -38,11 +38,13 @@ class FileContextFilter(logging.Filter):
             record.col_offset = 0
             record.end_lineno = 1
             record.end_col_offset = 0
+            record.filename = self.file_name
         else:
-            record.lineno = self.node.lineno
-            record.col_offset = self.node.col_offset
-            record.end_lineno = self.node.end_lineno
-            record.end_col_offset = self.node.end_col_offset
+            record.lineno = getattr(self.node, 'lineno', 1)
+            record.col_offset = getattr(self.node, 'col_offset', 0)
+            record.end_lineno = getattr(self.node, 'end_lineno', record.lineno)
+            record.end_col_offset = getattr(self.node, 'end_col_offset', record.col_offset)
+            record.filename = self.file_name
         return True
 
 
@@ -88,9 +90,12 @@ class CompilerError(Exception):
 
 class CompilingNodeTransformer(TypedNodeTransformer):
     step = "Node transformation"
+    filename = None
 
     def visit(self, node):
         OPSHIN_LOG_CONTEXT_FILTER.node = node
+        if self.filename is not None:
+            OPSHIN_LOG_CONTEXT_FILTER.file_name = self.filename
         try:
             return super().visit(node)
         except Exception as e:

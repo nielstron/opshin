@@ -66,9 +66,11 @@ class RewriteImport(CompilingNodeTransformer):
     step = "Resolving imports"
 
     def __init__(self, filename=None, package=None, resolved_imports=None):
+        super().__init__()
         self.filename = filename
         self.package = package
         self.resolved_imports = resolved_imports or OrderedSet()
+        self.__class__.filename = filename
 
     def visit_Import(self, node):
         error_msg = f"The import must have the form 'from <pkg> import *' or import from one of the special modules {', '.join(SPECIAL_IMPORTS)}"
