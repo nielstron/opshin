@@ -343,7 +343,11 @@ DCert = Union[
 ]
 
 
+
+# POSIX timestamp in milliseconds (compatible with Cardano's format)
+# Note: Python typically uses seconds-based timestamps - conversions require division/multiplication by 1000 when interacting with datetime modules
 POSIXTime = int
+
 
 
 @dataclass(unsafe_hash=True)
