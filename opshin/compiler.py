@@ -1147,10 +1147,11 @@ def compile(
     filename=None,
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ) -> plt.Program:
     compile_pipeline = [
         # Important to call this one first - it imports all further files
-        RewriteImport(filename=filename),
+        RewriteImport(filename=filename, trace_filename=trace_filename),
         # Rewrites that simplify the python code
         RewriteForbiddenReturn(),
         OptimizeConstantFolding() if config.constant_folding else NoOp(),

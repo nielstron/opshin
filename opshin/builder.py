@@ -190,12 +190,14 @@ def compile(
     contract_filename: Optional[str] = None,
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ) -> uplc_ast.Program:
     code = compiler.compile(
         program,
         filename=contract_filename,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     )
     plt_code = plt_compile(code, config)
     return plt_code
@@ -207,6 +209,7 @@ def _static_compile(
     contract_file: str = "<unknown>",
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     """
     Expects a python module and returns the build artifacts from compiling it
@@ -218,6 +221,7 @@ def _static_compile(
         contract_filename=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     )
     return code
 
@@ -228,6 +232,7 @@ def _compile(
     contract_file: str = "<unknown>",
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     """
     Expects a python module and returns the build artifacts from compiling it
@@ -238,6 +243,7 @@ def _compile(
         contract_file=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     )
     code = _apply_parameters(code, *args)
     return code
@@ -248,6 +254,7 @@ def build(
     *args: typing.Union[pycardano.Datum, uplc_ast.Constant],
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     """
     Expects a python module and returns the build artifacts from compiling it
@@ -260,6 +267,7 @@ def build(
         contract_file=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     )
     return _build(code)
 

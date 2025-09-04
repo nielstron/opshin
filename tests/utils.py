@@ -21,6 +21,7 @@ def eval_uplc_raw(
     contract_file: str = "<unknown>",
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     code = _compile(
         source_code,
@@ -28,6 +29,7 @@ def eval_uplc_raw(
         contract_file=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     )
     return uplc_eval(code)
 
@@ -38,6 +40,7 @@ def eval_uplc(
     contract_file: str = "<unknown>",
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     ret = eval_uplc_raw(
         source_code,
@@ -45,6 +48,7 @@ def eval_uplc(
         contract_file=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     ).result
     if isinstance(ret, Exception):
         raise ret
@@ -57,6 +61,7 @@ def eval_uplc_value(
     contract_file: str = "<unknown>",
     validator_function_name="validator",
     config=DEFAULT_CONFIG,
+    trace_filename: bool = False,
 ):
     return eval_uplc(
         source_code,
@@ -64,4 +69,5 @@ def eval_uplc_value(
         contract_file=contract_file,
         validator_function_name=validator_function_name,
         config=config,
+        trace_filename=trace_filename,
     ).value

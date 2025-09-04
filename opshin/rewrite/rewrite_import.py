@@ -44,10 +44,15 @@ def import_module(name, package=None):
 
 
 class RewriteLocation(CompilingNodeTransformer):
-    def __init__(self, orig_node):
+    _fields = ("orig_node",)
+
+    def __init__(self, orig_node, trace_filename: bool = False):
         self.orig_node = orig_node
+        self.trace_filename = trace_filename
 
     def visit(self, node):
+        if self.trace_filename and hasattr(node, "lineno"):
+            node.filename = self.orig_node.filename
         node = ast.copy_location(node, self.orig_node)
         return super().visit(node)
 
@@ -64,11 +69,19 @@ SPECIAL_IMPORTS = [
 
 class RewriteImport(CompilingNodeTransformer):
     step = "Resolving imports"
+    _fields = ("filename", "package", "resolved_imports", "trace_filename")
 
-    def __init__(self, filename=None, package=None, resolved_imports=None):
+    def __init__(
+        self,
+        filename=None,
+        package=None,
+        resolved_imports=None,
+        trace_filename: bool = False,
+    ):
         self.filename = filename
         self.package = package
         self.resolved_imports = resolved_imports or OrderedSet()
+        self.trace_filename = trace_filename
 
     def visit_Import(self, node):
         error_msg = f"The import must have the form 'from <pkg> import *' or import from one of the special modules {', '.join(SPECIAL_IMPORTS)}"
@@ -104,12 +117,13 @@ class RewriteImport(CompilingNodeTransformer):
             module_content = fp.read()
         resolved = parse(module_content, filename=module_file.name)
         # annotate this to point to the original line number!
-        RewriteLocation(node).visit(resolved)
+        RewriteLocation(node, self.trace_filename).visit(resolved)
         # recursively import all statements there
         recursive_resolver = RewriteImport(
             filename=str(module_file),
             package=module.__package__,
             resolved_imports=self.resolved_imports,
+            trace_filename=self.trace_filename,
         )
         recursively_resolved: Module = recursive_resolver.visit(resolved)
         self.resolved_imports.update(recursive_resolver.resolved_imports)
