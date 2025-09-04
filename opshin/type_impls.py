@@ -3169,16 +3169,21 @@ def transform_ext_params_map(p: Type):
     if p in TransformExtParamsMap:
         return TransformExtParamsMap[p]
     if isinstance(p.typ, ListType):
-        list_int_typ = p.typ.typ
         return lambda x: plt.MapList(
             plt.UnListData(x),
-            OLambda(["x"], transform_ext_params_map(list_int_typ)(OVar("x"))),
+            OLambda(["x"], transform_ext_params_map(p.typ.typ)(OVar("x"))),
             empty_list(p.typ.typ),
         )
     if isinstance(p.typ, DictType):
         # there doesn't appear to be a constructor function to make Pair a b for any types
         # so pairs will always contain Data
         return lambda x: plt.UnMapData(x)
+    if isinstance(p.typ, UnionType):
+        # a union type is already in the form of PlutusData
+        return lambda x: x
+    if isinstance(p.typ, AnyType):
+        # anything is already in the form of PlutusData
+        return lambda x: x
     return lambda x: x
 
 
@@ -3206,15 +3211,20 @@ def transform_output_map(p: Type):
     if p in TransformOutputMap:
         return TransformOutputMap[p]
     if isinstance(p.typ, ListType):
-        list_int_typ = p.typ.typ
         return lambda x: plt.ListData(
             plt.MapList(
                 x,
-                OLambda(["x"], transform_output_map(list_int_typ)(OVar("x"))),
+                OLambda(["x"], transform_output_map(p.typ.typ)(OVar("x"))),
             ),
         )
     if isinstance(p.typ, DictType):
         # there doesn't appear to be a constructor function to make Pair a b for any types
         # so pairs will always contain Data
         return lambda x: plt.MapData(x)
+    if isinstance(p.typ, UnionType):
+        # a union type is already in the form of PlutusData
+        return lambda x: x
+    if isinstance(p.typ, AnyType):
+        # anything is already in the form of PlutusData
+        return lambda x: x
     return lambda x: x

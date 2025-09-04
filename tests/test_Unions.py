@@ -530,7 +530,6 @@ def validator(x: int) -> int:
         real = x + 1 if x > 5 else len(b"0" * x)
         self.assertEqual(res, real)
 
-    @pytest.mark.skip("Known compiler error: Respective Issue #496")
     @hypothesis.given(st.sampled_from(range(14)))
     def test_Union_builtin_cast_List(self, x):
         source_code = """
@@ -555,7 +554,6 @@ def validator(x: int) -> int:
         real = x + 2 if x > 5 else len(b"0" * x)
         self.assertEqual(res, real)
 
-    @pytest.mark.skip("Known compiler error: Respective Issue #496")
     @hypothesis.given(st.sampled_from(range(14)))
     def test_Union_builtin_cast_List_call(self, x):
         source_code = """
