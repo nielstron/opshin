@@ -59,7 +59,7 @@ class Type:
     def attribute_type(self, attr) -> "Type":
         """The types of the named attributes of this class"""
         raise TypeInferenceError(
-            f"Object of type {self.python_type()} does not have attribute {attr}"
+            f"Object of type {self.python_type()} does not have attribute '{attr}'"
         )
 
     def attribute(self, attr) -> plt.AST:
@@ -185,8 +185,7 @@ class Record:
         object.__setattr__(self, "fields", frozenlist(self.fields))
 
     def __ge__(self, other):
-        if not isinstance(other, Record):
-            return False
+        assert isinstance(other, Record), "Can only compare Records to Records"
         return (
             self.constructor == other.constructor
             and len(self.fields) == len(other.fields)
@@ -554,9 +553,7 @@ class RecordType(ClassType):
                 return t
         if attr == "to_cbor":
             return InstanceType(FunctionType(frozenlist([]), ByteStringInstanceType))
-        raise TypeInferenceError(
-            f"Type {self.record.name} does not have attribute {attr}"
-        )
+        super().attribute_type(attr)
 
     def attribute(self, attr: str) -> plt.AST:
         """The attributes of this class. Need to be a lambda that expects as first argument the object itself"""
@@ -899,7 +896,7 @@ class UnionType(ClassType):
                     ),
                 )
         raise NotImplementedError(
-            f"Can not compare {o} and {self} with operation {op.__class__}. Note that comparisons that always return false are also rejected."
+            f"Can not compare {o.python_type()} and {self.python_type()} with operation {op.__class__.__name__}. Note that comparisons that always return false are also rejected."
         )
 
     def stringify(self, recursive: bool = False) -> plt.AST:
@@ -910,12 +907,12 @@ class UnionType(ClassType):
                 contains_non_record = True
                 continue
             decide_string_func = plt.Ite(
-                plt.EqualsInteger(OVar("c"), plt.Integer(t.record.constructor)),
+                plt.EqualsInteger(OVar("constr"), plt.Integer(t.record.constructor)),
                 t.stringify(recursive=True),
                 decide_string_func,
             )
         decide_string_func = OLet(
-            [("c", plt.Constructor(OVar("self")))],
+            [("constr", plt.Constructor(OVar("self")))],
             plt.Apply(decide_string_func, OVar("self")),
         )
         if contains_non_record:
@@ -3047,7 +3044,9 @@ class BytesImpl(PolymorphicFunction):
             len(args) == 1
         ), f"'bytes' takes only one argument, but {len(args)} were given"
         typ = args[0]
-        assert isinstance(typ, InstanceType), "Can only create bools from instances"
+        assert isinstance(
+            typ, InstanceType
+        ), "Can only create bytes from instances, got ClassType"
         assert any(
             isinstance(typ.typ, t)
             for t in (
@@ -3055,16 +3054,18 @@ class BytesImpl(PolymorphicFunction):
                 ByteStringType,
                 ListType,
             )
-        ), "Can only create bytes from int, bytes or integer lists"
+        ), f"Can only create bytes from int, bytes or integer lists, got {typ.python_type()}"
         if isinstance(typ.typ, ListType):
             assert (
                 typ.typ.typ == IntegerInstanceType
-            ), "Can only create bytes from integer lists but got a list with another type"
+            ), f"Can only create bytes from integer lists but got a list with another type {typ.python_type()}"
         return FunctionType(args, ByteStringInstanceType)
 
     def impl_from_args(self, args: typing.List[Type]) -> plt.AST:
         arg = args[0]
-        assert isinstance(arg, InstanceType), "Can only create bytes from instances"
+        assert isinstance(
+            arg, InstanceType
+        ), "Can only create bytes from instances, got ClassType"
         if isinstance(arg.typ, ByteStringType):
             return OLambda(["x"], OVar("x"))
         elif isinstance(arg.typ, IntegerType):
@@ -3182,13 +3183,13 @@ def transform_ext_params_map(p: Type):
     return lambda x: x
 
 
+OUnit = plt.ConstrData(plt.Integer(0), plt.EmptyDataList())
+
 TransformOutputMap = {
     StringInstanceType: lambda x: plt.BData(plt.EncodeUtf8(x)),
     IntegerInstanceType: lambda x: plt.IData(x),
     ByteStringInstanceType: lambda x: plt.BData(x),
-    UnitInstanceType: lambda x: plt.Apply(
-        OLambda(["_"], plt.ConstrData(plt.Integer(0), plt.EmptyDataList())), x
-    ),
+    UnitInstanceType: lambda x: plt.Apply(OLambda(["_"], OUnit), x),
     BoolInstanceType: lambda x: plt.IData(
         plt.IfThenElse(x, plt.Integer(1), plt.Integer(0))
     ),

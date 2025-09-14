@@ -339,7 +339,7 @@ class TypeCheckVisitor(TypedNodeVisitor):
                 if len(ts) < len(checks):
                     continue
                 inv_res[v] = union_types(*ts)
-        if isinstance(node.op, Or):
+        elif isinstance(node.op, Or):
             # a disjunction is just the union, but some type must be checked in every disjunction
             for v, ts in checked_types.items():
                 if len(ts) < len(checks):
@@ -348,6 +348,8 @@ class TypeCheckVisitor(TypedNodeVisitor):
             # if the disjunction fails, then it must be in the intersection of the inverses
             for v, ts in inv_checked_types.items():
                 inv_res[v] = intersection_types(*ts)
+        else:
+            raise NotImplementedError(f"Unsupported boolean operator {node.op}")
         return (res, inv_res)
 
     def visit_UnaryOp(self, node: UnaryOp) -> TypeMapPair:
@@ -696,7 +698,7 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
         return stmts
 
     def visit_ClassDef(self, node: ClassDef) -> TypedClassDef:
-        class_record = RecordReader.extract(node, self)
+        class_record = RecordReader(self).extract(node)
         typ = RecordType(class_record)
         self.set_variable_type(node.name, typ)
         self.FUNCTION_ARGUMENT_REGISTRY[node.name] = [
@@ -1035,9 +1037,10 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             values = []
             prevtyps = {}
             for e in node.values:
-                values.append(self.visit(e))
+                e_visited = self.visit(e)
+                values.append(e_visited)
                 typchecks, _ = TypeCheckVisitor(self.allow_isinstance_anything).visit(
-                    values[-1]
+                    e_visited
                 )
                 # for the time after the shortcut and the variable type to the specialized type
                 wrapped = self.implement_typechecks(typchecks)
@@ -1068,7 +1071,7 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             self.implement_typechecks(prevtyps)
             tt.values = values
         else:
-            tt.values = [self.visit(e) for e in node.values]
+            raise NotImplementedError(f"Boolean operator {node.op} not supported")
         tt.typ = BoolInstanceType
         assert all(
             BoolInstanceType >= e.typ for e in tt.values
@@ -1106,11 +1109,9 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
                     ts.value.typ.typ.typs
                 ), f"Subscript index out of bounds for tuple. Accessing index {ts.slice.value} in tuple with {len(ts.value.typ.typ.typs)} elements ({ts.value.typ.python_type()})"
                 ts.typ = ts.value.typ.typ.typs[ts.slice.value]
-            elif all(ts.value.typ.typ.typs[0] == t for t in ts.value.typ.typ.typs):
-                ts.typ = ts.value.typ.typ.typs[0]
             else:
                 raise TypeInferenceError(
-                    f"Could not infer type of subscript of typ {ts.value.typ.typ.__class__}"
+                    f"Could not infer type of subscript of typ {ts.value.typ.python_type()}"
                 )
         elif isinstance(ts.value.typ.typ, PairType):
             if isinstance(ts.slice, Constant) and isinstance(ts.slice.value, int):
@@ -1121,7 +1122,7 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
                 )
             else:
                 raise TypeInferenceError(
-                    f"Could not infer type of subscript of typ {ts.value.typ.typ.__class__}"
+                    f"Could not infer type of subscript of typ {ts.value.typ.python_type()}"
                 )
         elif isinstance(ts.value.typ.typ, ListType):
             if not isinstance(ts.slice, Slice):
@@ -1312,12 +1313,12 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             functyp = tc.func.typ.typ
             assert len(tc.args) == len(
                 functyp.argtyps
-            ), f"Signature of function does not match number of arguments. Expected {len(functyp.argtyps)} arguments with these types: {functyp.argtyps} but got {len(tc.args)} arguments."
+            ), f"Signature of function does not match number of arguments. Expected {len(functyp.argtyps)} arguments but got {len(tc.args)} arguments."
             # all arguments need to be subtypes of the parameter type
             for i, (a, ap) in enumerate(zip(tc.args, functyp.argtyps)):
                 assert (
                     ap >= a.typ
-                ), f"Signature of function does not match arguments in argument {i}. Expected this type: {ap} but got {a.typ}."
+                ), f"Signature of function does not match arguments in argument {i}. Expected this type: {ap.python_type()} but got {a.typ.python_type()}."
             tc.typ = functyp.rettyp
             return tc
         raise TypeInferenceError("Could not infer type of call")
@@ -1404,17 +1405,11 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
         assert isinstance(
             itertyp, InstanceType
         ), "Can only iterate over instances, not classes"
-        if isinstance(itertyp.typ, TupleType):
-            assert itertyp.typ.typs, "Iterating over an empty tuple is not allowed"
-            vartyp = itertyp.typ.typs[0]
-            assert all(
-                itertyp.typ.typs[0] == t for t in new_g.iter.typ.typs
-            ), "Iterating through a tuple requires the same type for each element"
-        elif isinstance(itertyp.typ, ListType):
+        if isinstance(itertyp.typ, ListType):
             vartyp = itertyp.typ.typ
         else:
             raise NotImplementedError(
-                "Type inference for loops over non-list objects is not supported"
+                "Iterating over non-list objects is not (yet) supported"
             )
         self.set_variable_type(g.target.id, vartyp)
         new_g.target = self.visit(g.target)
@@ -1525,17 +1520,17 @@ class RecordReader(NodeVisitor):
         self.attributes = []
         self._type_inferencer = type_inferencer
 
-    @classmethod
-    def extract(cls, c: ClassDef, type_inferencer: AggressiveTypeInferencer) -> Record:
-        f = cls(type_inferencer)
-        f.visit(c)
-        if f.constructor is None:
+    def extract(self, c: ClassDef) -> Record:
+        self.visit(c)
+        if self.constructor is None:
             det_string = RecordType(
-                Record(f.name, f.orig_name, 0, frozenlist(f.attributes))
+                Record(self.name, self.orig_name, 0, frozenlist(self.attributes))
             ).pluthon_type(skip_constructor=True)
             det_hash = sha256(str(det_string).encode("utf8")).hexdigest()
-            f.constructor = int(det_hash, 16) % 2**32
-        return Record(f.name, f.orig_name, f.constructor, frozenlist(f.attributes))
+            self.constructor = int(det_hash, 16) % 2**32
+        return Record(
+            self.name, self.orig_name, self.constructor, frozenlist(self.attributes)
+        )
 
     def visit_AnnAssign(self, node: AnnAssign) -> None:
         assert isinstance(
@@ -1556,7 +1551,7 @@ class RecordReader(NodeVisitor):
                 )
             )
             return
-        assert typ == IntegerType, "CONSTR_ID must be assigned an integer"
+        assert typ == IntegerType(), "CONSTR_ID must be assigned an integer"
         assert isinstance(
             node.value, Constant
         ), "CONSTR_ID must be assigned a constant integer"
@@ -1597,10 +1592,6 @@ class RecordReader(NodeVisitor):
 
     def generic_visit(self, node: AST) -> None:
         raise NotImplementedError(f"Can not compile {ast.dump(node)} inside of a class")
-
-
-def typed_ast(ast: AST):
-    return AggressiveTypeInferencer().visit(ast)
 
 
 def map_to_orig_name(name: str):

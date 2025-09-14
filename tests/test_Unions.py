@@ -309,6 +309,25 @@ def validator(x: Union[int, bytes, bool]) -> int:
             res = eval_uplc_value(source_code, True)
         self.assertIsInstance(ce.exception.orig_err, AssertionError)
 
+    def test_any_fail(self):
+        source_code = """
+from opshin.prelude import *
+
+@dataclass
+class A(PlutusData):
+    CONSTR_ID = 0
+    foo: int
+
+def validator(x: Anything) -> int:
+    if isinstance(x, A):
+        return 5
+    return 100
+"""
+        with self.assertRaises(CompilerError) as ce:
+            res = eval_uplc_value(source_code, "test")
+        self.assertIsInstance(ce.exception.orig_err, AssertionError)
+        self.assertIn("instance of raw Anything", str(ce.exception.orig_err))
+
     @hypothesis.given(st.sampled_from([14, b""]))
     def test_Union_builtin_cast(self, x):
         source_code = """
@@ -623,6 +642,31 @@ def validator(x: Union[A, int]) -> int:
         with self.assertRaises(CompilerError) as ce:
             res = eval_uplc_value(source_code, 0)
         self.assertIsInstance(ce.exception.orig_err, AssertionError)
+
+    def test_Union_types_access_CONSTR_ID_2(self):
+        source_code = """
+from dataclasses import dataclass
+from typing import Dict, List, Union
+from pycardano import Datum as Anything, PlutusData
+
+@dataclass()
+class A(PlutusData):
+    CONSTR_ID = 0
+    foo: int
+
+@dataclass()
+class B(PlutusData):
+    CONSTR_ID = 1
+    bar: int
+
+def validator(x: Union[A, B]) -> int:
+    if x.CONSTR_ID == 0:
+        return 0
+    else:
+        return 1
+"""
+        res = eval_uplc_value(source_code, A(0))
+        self.assertEqual(res, 0)
 
     def test_isinstance_and_comparison_vulnerability(self):
         """

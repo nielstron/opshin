@@ -8,6 +8,8 @@ import uplc.ast as uplc
 from pycardano import PlutusData
 from uplc.ast import data_from_cbor
 
+from .bridge import to_uplc_builtin
+from .prelude import Nothing
 from .type_impls import (
     InstanceType,
     UnionType,
@@ -26,6 +28,7 @@ from .type_impls import (
     DictType,
     ByteStringType,
     FunctionType,
+    OUnit,
 )
 from .type_inference import map_to_orig_name, AggressiveTypeInferencer
 from .typed_ast import *
@@ -104,6 +107,9 @@ def rec_constant_map_data(c):
                 )
             )
         )
+    # This can occur when PlutusData is generated during constant folding
+    if isinstance(c, PlutusData):
+        return data_from_cbor(c.to_cbor())
     raise NotImplementedError(f"Unsupported constant type {type(c)}")
 
 
@@ -130,6 +136,7 @@ def rec_constant_map(c):
                 )
             ]
         )
+    # This can occur when PlutusData is generated during constant folding
     if isinstance(c, PlutusData):
         return data_from_cbor(c.to_cbor())
     raise NotImplementedError(f"Unsupported constant type {type(c)}")
@@ -158,7 +165,7 @@ def wrap_validator_double_function(x: plt.AST, pass_through: int = 0):
                 # call the validator with a0, a1, and plug in "Nothing" for data
                 plt.Apply(
                     OVar("p"),
-                    plt.UPLCConstant(uplc.PlutusConstr(6, [])),
+                    plt.UPLCConstant(to_uplc_builtin(Nothing())),
                     OVar("a0"),
                     OVar("a1"),
                 ),
@@ -330,9 +337,7 @@ class PlutoCompiler(CompilingNodeTransformer):
                         )
                         for x in all_vs
                     ],
-                    self.visit_sequence(body)(
-                        plt.ConstrData(plt.Integer(0), plt.EmptyDataList())
-                    ),
+                    self.visit_sequence(body)(OUnit),
                 ),
             )
             self.current_function_typ.pop()
@@ -361,9 +366,7 @@ class PlutoCompiler(CompilingNodeTransformer):
                     )
                     for x in all_vs
                 ],
-                self.visit_sequence(body)(
-                    plt.ConstrData(plt.Integer(0), plt.EmptyDataList())
-                ),
+                self.visit_sequence(body)(OUnit),
             )
 
         cp = plt.Program((1, 0, 0), validator)
@@ -514,7 +517,7 @@ class PlutoCompiler(CompilingNodeTransformer):
         body = node.body.copy()
         # defaults to returning None if there is no return statement
         if node.typ.typ.rettyp.typ == AnyType():
-            ret_val = plt.ConstrData(plt.Integer(0), plt.EmptyDataList())
+            ret_val = OUnit
         else:
             ret_val = plt.Unit()
         read_vs = sorted(list(node.typ.typ.bound_vars.keys()))
@@ -748,6 +751,12 @@ class PlutoCompiler(CompilingNodeTransformer):
                     ),
                 )
             else:
+                assert (
+                    node.slice.upper is not None
+                ), "Only slices with upper bound supported"
+                assert (
+                    node.slice.lower is not None
+                ), "Only slices with lower bound supported"
                 return OLet(
                     [
                         (
