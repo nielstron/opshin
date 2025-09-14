@@ -524,6 +524,14 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
         return None
 
     def type_from_annotation(self, ann: expr):
+        if isinstance(ann, Subscript):
+            value_type = self.type_from_annotation(ann.value)
+            if isinstance(ann.slice, Tuple):
+                slice_types = [self.type_from_annotation(el) for el in ann.slice.elts]
+            else:
+                slice_types = [self.type_from_annotation(ann.slice)]
+            return GenericType(value_type, slice_types)
+
         if isinstance(ann, Constant):
             if ann.value is None:
                 return UnitType()
@@ -540,13 +548,17 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             if ann.id in ATOMIC_TYPES:
                 return ATOMIC_TYPES[ann.id]
             if ann.id == "Self":
-                v_t = self.variable_type(ann.idSelf_new)
+                if not self.current_class:
+                    raise TypeInferenceError("'Self' type can only be used within class definitions")
+                return InstanceType(self.current_class)
             elif ann.id in ["Union", "List", "Dict"]:
                 raise TypeInferenceError(
-                    f"Annotation {ann.id} is not allowed as a variable type, use List[Anything], Dict[Anything, Anything] or Union[...] instead"
+                    f"Annotation {ann.id} is not allowed as a bare type, use concrete type arguments like {ann.id}[...]"
                 )
-            else:
+            elif isinstance(ann.ctx, ast.Load):
                 v_t = self.variable_type(ann.id)
+            else:
+                raise TypeInferenceError(f"Unresolved type annotation '{ann.id}'")
             if isinstance(v_t, ClassType):
                 return v_t
             raise TypeInferenceError(
