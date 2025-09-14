@@ -538,7 +538,13 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             if ann.id in ATOMIC_TYPES:
                 return ATOMIC_TYPES[ann.id]
             if ann.id == "Self":
-                v_t = self.variable_type(ann.idSelf_new)
+                # Handle Self by looking for the idSelf attribute set during rewrite
+                if hasattr(ann, "idSelf"):
+                    v_t = self.variable_type(ann.idSelf)
+                else:
+                    raise TypeInferenceError(
+                        "Self type annotation found but not properly processed during rewrite"
+                    )
             elif ann.id in ["Union", "List", "Dict"]:
                 raise TypeInferenceError(
                     f"Annotation {ann.id} is not allowed as a variable type, use List[Anything], Dict[Anything, Anything] or Union[...] instead"

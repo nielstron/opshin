@@ -36,6 +36,18 @@ class RewriteImportTyping(CompilingNodeTransformer):
         self.imports_typing = True
         return None
 
+    def _process_annotation_for_self(self, annotation, class_name):
+        """Recursively process annotations to replace Self with the class name"""
+        if isinstance(annotation, Name) and annotation.id == "Self":
+            annotation.idSelf = class_name
+        elif isinstance(annotation, Subscript):
+            # Process the slice elements recursively
+            if isinstance(annotation.slice, Tuple):
+                for elt in annotation.slice.elts:
+                    self._process_annotation_for_self(elt, class_name)
+            else:
+                self._process_annotation_for_self(annotation.slice, class_name)
+
     def visit_ClassDef(self, node: ClassDef) -> ClassDef:
         assert (
             self.imports_typing
@@ -44,25 +56,8 @@ class RewriteImportTyping(CompilingNodeTransformer):
             for i, attribute in enumerate(node.body):
                 if isinstance(attribute, FunctionDef):
                     for j, arg in enumerate(attribute.args.args):
-                        if (
-                            isinstance(arg.annotation, Name)
-                            and arg.annotation.id == "Self"
-                        ):
-                            node.body[i].args.args[j].annotation.idSelf = node.name
-                        if (
-                            isinstance(arg.annotation, Subscript)
-                            and arg.annotation.value.id == "Union"
-                        ):
-                            for k, s in enumerate(arg.annotation.slice.elts):
-                                if isinstance(s, Name) and s.id == "Self":
-                                    node.body[i].args.args[j].annotation.slice.elts[
-                                        k
-                                    ].idSelf = node.name
+                        self._process_annotation_for_self(arg.annotation, node.name)
 
-                    if (
-                        isinstance(attribute.returns, Name)
-                        and attribute.returns.id == "Self"
-                    ):
-                        node.body[i].returns.idSelf = node.name
+                    self._process_annotation_for_self(attribute.returns, node.name)
 
         return node
