@@ -5,10 +5,10 @@ from typing import Self
 @dataclass
 class A(PlutusData):
 
-    def foo(x: Dict[Self, int]) -> Union[Self, int]:
+    def foo(self, x: Dict[Self, int]) -> int:
         for y in x.values():
             return y
         return 0
 
 def validator(a: int) -> bool:
-    return foo({A(): a}) == 1
+    return A().foo({A(): a}) == 1
