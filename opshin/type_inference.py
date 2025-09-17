@@ -636,6 +636,30 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
             return AnyType()
         raise NotImplementedError(f"Annotation type {ann.__class__} is not supported")
 
+    def _check_annotation_for_self_reference(self, annotation, class_name):
+        """Recursively check annotation for invalid self-references, allowing those from Self"""
+        if isinstance(annotation, ast.Name):
+            # Allow self-reference if this was originally a Self annotation
+            if hasattr(annotation, 'idSelf_new'):
+                pass  # This was a Self annotation, so self-reference is valid
+            else:
+                assert (
+                    annotation.id != class_name
+                ), "Invalid Python, class name is undefined at this stage."
+        elif isinstance(annotation, ast.Subscript):
+            # Recursively check subscript value and slice
+            self._check_annotation_for_self_reference(annotation.value, class_name)
+            self._check_annotation_for_self_reference(annotation.slice, class_name)
+        elif isinstance(annotation, ast.Tuple):
+            # Check all elements in tuple (common in subscript slices)
+            for elt in annotation.elts:
+                self._check_annotation_for_self_reference(elt, class_name)
+        elif isinstance(annotation, ast.List):
+            # Check all elements in list
+            for elt in annotation.elts:
+                self._check_annotation_for_self_reference(elt, class_name)
+        # Note: Constants and other types don't need checking
+
     def visit_sequence(self, node_seq: typing.List[stmt]) -> plt.AST:
         additional_functions = []
         for n in node_seq:
@@ -654,23 +678,10 @@ class AggressiveTypeInferencer(CompilingNodeTransformer):
                 func.name = f"{n.name}_+_{attribute.name}"
                 for arg in func.args.args:
                     if not arg.annotation is None:
-                        if isinstance(arg.annotation, ast.Name):
-                            assert (
-                                arg.annotation.id != n.name
-                            ), "Invalid Python, class name is undefined at this stage."
-                        elif (
-                            isinstance(arg.annotation, ast.Subscript)
-                            and arg.annotation.value.id == "Union"
-                        ):
-                            for s in arg.annotation.slice.elts:
-                                assert (
-                                    isinstance(s, Name) and s.id != n.name
-                                ) or isinstance(
-                                    s, Constant
-                                ), "Invalid Python, class name is undefined at this stage."
-                assert isinstance(func.returns, Constant) or (
-                    isinstance(func.returns, Name) and func.returns.id != n.name
-                ), "Invalid Python, class name is undefined at this stage"
+                        self._check_annotation_for_self_reference(arg.annotation, n.name)
+                # Check return type for self-reference
+                if func.returns is not None:
+                    self._check_annotation_for_self_reference(func.returns, n.name)
                 ann = ast.Name(id=n.name, ctx=ast.Load())
                 custom_fix_missing_locations(ann, attribute.args.args[0])
                 ann.orig_id = attribute.args.args[0].orig_arg
